@@ -13,38 +13,64 @@ interface JwtPayload {
 }
 
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
-  const token = await req.cookies.access_token;
-  if (!token) {
-    return next(
-      new ApiError({
-        status: HTTP_STATUS.BAD_REQUEST,
-        message: RESPONSE_MESSAGES.USERS.RE_LOGIN,
-      })
-    );
-  }
-
   try {
-    const { id } = jwt.verify(token, JWT_SECRET as string) as JwtPayload;
-    req.user = await User.findById(id);
+    // Get token from cookies
+    const token = req.cookies.access_token;
+
+    console.log('Token:', token);
+
+    // Check if token exists
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Please log in again',
+      });
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, JWT_SECRET as string) as JwtPayload;
+
+    // Find user
+    const user = await User.findById(decoded.id);
+
+    // Check if user exists
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Attach user to request
+    req.user = user;
+
     next();
   } catch (error: any) {
     console.log('Token verification error:', error);
-    return next(
-      new ApiError({
-        status: HTTP_STATUS.FORBIDDEN,
-        message: RESPONSE_MESSAGES.USERS.INVALID_TOKEN,
-      })
-    );
+
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token',
+    });
   }
 };
 
 export const isAdminMiddleware = async (req: Request, res: Response, next: NextFunction) => {
-  const role = req.user.role;
-  if (role !== Role.Admin) {
-    return new ApiError({
-      status: HTTP_STATUS.UNAUTHORIZED,
-      message: RESPONSE_MESSAGES.USERS.UNAUTHORIZED_USER,
+  try {
+    const role = req.user.role;
+
+    if (role !== Role.Admin) {
+      return res.status(403).json({
+        success: false,
+        message: RESPONSE_MESSAGES.USERS.UNAUTHORIZED_USER,
+      });
+    }
+
+    next();
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Something went wrong',
     });
   }
-  next();
 };
